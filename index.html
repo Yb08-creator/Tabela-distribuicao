@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Fiorino Finance</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+html,body{background:#0d0d0d;min-height:100vh;font-family:'Inter',sans-serif;color:#f0f0f0;}
+:root{
+  --bg:#0d0d0d;--s1:#141414;--s2:#1a1a1a;--s3:#222;
+  --border:#2a2a2a;--border2:#333;
+  --text1:#f0f0f0;--text2:#888;--text3:#444;
+  --blue:#3b82f6;--green:#22c55e;--red:#ef4444;
+  --yellow:#f59e0b;--purple:#a855f7;--teal:#14b8a6;--orange:#f97316;
+}
+::-webkit-scrollbar{width:4px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:2px;}
+input[type=text],input[type=number]{
+  background:var(--s3);border:1.5px solid var(--border2);border-radius:10px;
+  color:var(--text1);font-family:'Inter',sans-serif;font-size:15px;
+  padding:10px 14px;outline:none;width:100%;transition:border-color .2s;
+}
+input[type=text]:focus,input[type=number]:focus{border-color:var(--blue);}
+input[type=range]{
+  -webkit-appearance:none;appearance:none;width:100%;height:4px;
+  background:#2a2a2a;border-radius:2px;outline:none;cursor:pointer;
+}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:18px;height:18px;border-radius:50%;
+  background:#fff;cursor:pointer;box-shadow:0 1px 6px rgba(0,0,0,.6);
+  transition:box-shadow .15s,transform .12s;
+}
+input[type=range]::-webkit-slider-thumb:hover{box-shadow:0 0 0 6px rgba(255,255,255,.1);transform:scale(1.15);}
+button{cursor:pointer;font-family:'Inter',sans-serif;border:none;outline:none;}
+#nav{
+  position:fixed;bottom:0;left:0;right:0;background:var(--s1);
+  border-top:1px solid var(--border);display:flex;z-index:100;
+  padding:8px 0 max(8px,env(safe-area-inset-bottom));
+}
+.nav-btn{
+  flex:1;background:transparent;color:var(--text3);display:flex;
+  flex-direction:column;align-items:center;gap:3px;padding:4px 0;
+  font-size:10px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;
+  transition:color .2s;border:none;
+}
+.nav-btn svg{width:22px;height:22px;}
+.nav-btn.active{color:var(--blue);}
+.card{background:var(--s2);border-radius:16px;padding:16px 18px;margin-bottom:10px;}
+.card.bordered{border:1px solid var(--border);}
+.calc-btn{
+  background:var(--s2);color:var(--text1);border:none;border-radius:12px;
+  font-size:20px;font-weight:600;font-family:'Inter',sans-serif;
+  padding:17px 0;transition:background .12s,transform .08s;user-select:none;
+}
+.calc-btn:active{transform:scale(0.91);}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:none;}}
+.fade{animation:fadeIn .25s ease;}
+.modal-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:200;
+  display:flex;align-items:flex-end;justify-content:center;
+}
+.modal-sheet{
+  background:var(--s1);border-radius:20px 20px 0 0;width:100%;max-width:520px;
+  max-height:92vh;overflow-y:auto;padding:20px 20px max(20px,env(safe-area-inset-bottom));
+}
+.modal-handle{width:40px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 20px;}
+.progress-track{background:var(--s3);border-radius:4px;overflow:hidden;}
+.progress-fill{height:100%;border-radius:4px;transition:width .6s ease;}
+.page{padding:16px 16px 100px;max-width:520px;margin:0 auto;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const{useState,useEffect,useCallback,useMemo,useReducer}=React;
+const APP_KEY='fiorino_v2';
+const DEFAULT_CONFIG={nome:'',seguro_mes:1928,parcela_mes:1545,ipva_ano:4770,dias_mes:26,divida_mae_total:30000,meta_manut:800,meta_emerg:3000};
+const DEFAULT_PCTS={manut:20,mae:30,emerg:20};
+const CAT_LABELS={seguro:'Seguro',parcela:'Parcela',ipva:'IPVA',gasolina:'Gasolina',manut:'Manutenção',mae:'Pagto Mãe',emerg:'Emergência',lucro:'Lucro'};
+
+function fmt(n,d=2){return(n||0).toLocaleString('pt-BR',{minimumFractionDigits:d,maximumFractionDigits:d});}
+function fmtDateFull(iso){const[y,m,d]=iso.split('-');return`${d}/${m}/${y}`;}
+function todayISO(){return new Date().toISOString().slice(0,10);}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2);}
+function getMonth(iso){return iso.slice(0,7);}
+function monthLabel(ym){const[y,m]=ym.split('-');return['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][+m-1]+'/'+y.slice(2);}
+
+function loadState(){try{const r=localStorage.getItem(APP_KEY);return r?JSON.parse(r):null;}catch{return null;}}
+function saveState(s){try{localStorage.setItem(APP_KEY,JSON.stringify(s));}catch{}}
+function initState(){return loadState()||{config:DEFAULT_CONFIG,pcts:DEFAULT_PCTS,lancamentos:[],saques:[]};}
+
+function reducer(state,action){
+  let next;
+  switch(action.type){
+    case'CONFIG':next={...state,config:{...state.config,...action.p}};break;
+    case'PCTS':next={...state,pcts:action.p};break;
+    case'ADD_L':next={...state,lancamentos:[action.p,...state.lancamentos]};break;
+    case'DEL_L':next={...state,lancamentos:state.lancamentos.filter(l=>l.id!==action.id)};break;
+    case'ADD_S':next={...state,saques:[...(state.saques||[]),action.p]};break;
+    case'DEL_S':next={...state,saques:(state.saques||[]).filter(s=>s.id!==action.id)};break;
+    default:return state;
+  }
+  saveState(next);return next;
+}
+
+const IcoHome=()=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>;
+const IcoPlus=()=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>;
+const IcoList=()=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>;
+const IcoPig=()=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 5c-1.5 0-2.8 1.4-3 2-3.5-1.5-11-.3-11 5 0 1.8 0 3 2 4.5V20h4v-2h3v2h4v-4.5c2-.9 2.5-2.5 2.5-4 0-.3 0-.6-.1-.9A4 4 0 0019 5z"/><path d="M2 9.5C1 9 1 8.5 1 7.5 1 6 2 5 3 5c1.5 0 2 2 2.5 3"/></svg>;
+const IcoGear=()=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>;
+const IcoCalc=()=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><circle cx="8" cy="10" r=".5" fill="currentColor"/><circle cx="12" cy="10" r=".5" fill="currentColor"/><circle cx="16" cy="10" r=".5" fill="currentColor"/><circle cx="8" cy="14" r=".5" fill="currentColor"/><circle cx="12" cy="14" r=".5" fill="currentColor"/><circle cx="16" cy="14" r=".5" fill="currentColor"/><line x1="8" y1="18" x2="12" y2="18"/></svg>;
+const IcoTrash=()=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>;
+const IcoCheck=()=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>;
+const IcoX=()=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>;
+
+function ProgressBar({pct,color,h=8}){
+  return <div className="progress-track" style={{height:h}}><div className="progress-fill" style={{width:`${Math.min(pct,100)}%`,background:color,height:h}}/></div>;
+}
+function Sec({children,color}){
+  return <div style={{color:color||'#666',fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'.08em',marginBottom:10,marginTop:4}}>{children}</div>;
+}
+function Btn({label,onClick,color,outline,full,disabled,small}){
+  return <button onClick={onClick} disabled={disabled} style={{
+    background:disabled?'#1a1a1a':(outline?'transparent':(color||'var(--blue)')),
+    border:outline?`1.5px solid ${color||'var(--blue)'}`:'none',
+    borderRadius:12,color:disabled?'#444':(outline?(color||'var(--blue)'):'#fff'),
+    fontSize:small?13:15,fontWeight:600,padding:small?'9px 16px':'13px 20px',
+    width:full?'100%':'auto',opacity:disabled?.5:1,transition:'opacity .2s',
+  }}>{label}</button>;
+}
+
+function getFixas(cfg){
+  const seg=cfg.seguro_mes/cfg.dias_mes;
+  const par=cfg.parcela_mes/cfg.dias_mes;
+  const ipv=cfg.ipva_ano/312;
+  return{seg,par,ipv,total:seg+par+ipv};
+}
+function getBuckets(lancamentos,saques){
+  const tot={seguro:0,parcela:0,ipva:0,manut:0,mae:0,emerg:0,lucro:0,gasolina:0};
+  lancamentos.forEach(l=>Object.keys(tot).forEach(k=>{tot[k]+=(l.dist[k]||0);}));
+  const stot={seguro:0,parcela:0,ipva:0,manut:0,mae:0,emerg:0};
+  (saques||[]).forEach(s=>{if(stot[s.cat]!==undefined)stot[s.cat]+=s.valor;});
+  const saldo={};
+  Object.keys(stot).forEach(k=>{saldo[k]=Math.max(0,tot[k]-stot[k]);});
+  saldo.lucro=tot.lucro;saldo.gasolina=tot.gasolina;
+  return{tot,saldo,stot};
+}
+
+// ── CALCULADORA ──────────────────────────────────────────────────
+function CalcModal({onClose}){
+  const[disp,setDisp]=useState('0');
+  const[prev,setPrev]=useState(null);
+  const[op,setOp]=useState(null);
+  const[fresh,setFresh]=useState(false);
+  const[hist,setHist]=useState([]);
+  const pressD=d=>{if(fresh){setDisp(d==='.'?'0.':d);setFresh(false);return;}if(d==='.'&&disp.includes('.'))return;setDisp(disp==='0'&&d!=='.'?d:disp+d);};
+  const cal=(a,b,o)=>{if(o==='+')return a+b;if(o==='-')return a-b;if(o==='×')return a*b;if(o==='÷')return b?a/b:0;return b;};
+  const pressO=o=>{const c=parseFloat(disp)||0;if(prev!==null&&!fresh){const r=cal(prev,c,op);setDisp(fmt(r));setPrev(r);}else setPrev(c);setOp(o);setFresh(true);};
+  const pressEq=()=>{if(prev===null||!op)return;const c=parseFloat(disp)||0;const r=cal(prev,c,op);setHist(h=>[`${fmt(prev)} ${op} ${fmt(c)} = ${fmt(r)}`,...h].slice(0,5));setDisp(fmt(r));setPrev(null);setOp(null);setFresh(true);};
+  const C=()=>{setDisp('0');setPrev(null);setOp(null);setFresh(false);};
+  const B=({l,p,t='n'})=>{
+    const bg=t==='op'?'#1e2235':t==='eq'?'var(--blue)':t==='fn'?'#1e1e1e':'var(--s2)';
+    const c=t==='op'?'#7a9fea':t==='fn'?'#aaa':'#fff';
+    return <button className="calc-btn" onClick={p} style={{background:op===l&&t==='op'?'var(--blue)':bg,color:op===l&&t==='op'?'#fff':c}}>{l}</button>;
+  };
+  return <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-sheet" style={{maxWidth:380}} onClick={e=>e.stopPropagation()}>
+      <div className="modal-handle"/>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+        <span style={{fontWeight:700,fontSize:18}}>Calculadora</span>
+        <button onClick={onClose} style={{background:'var(--s3)',border:'none',borderRadius:8,padding:'6px 8px',color:'var(--text2)',display:'flex'}}><IcoX/></button>
+      </div>
+      {hist.length>0&&<div style={{background:'#111',borderRadius:10,padding:'8px 12px',marginBottom:10}}>{hist.map((h,i)=><div key={i} style={{color:i===0?'#666':'#333',fontSize:11,fontFamily:'monospace',marginBottom:1}}>{h}</div>)}</div>}
+      <div style={{background:'var(--s2)',borderRadius:14,padding:'18px 20px',marginBottom:10,textAlign:'right'}}>
+        {op&&prev!==null&&<div style={{color:'#444',fontSize:13,marginBottom:4}}>{fmt(prev)} {op}</div>}
+        <div style={{color:'#fff',fontWeight:700,letterSpacing:'-.02em',wordBreak:'break-all',fontSize:disp.length>14?20:disp.length>9?26:38}}>{disp}</div>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8}}>
+        <B l="C" p={C} t="fn"/>
+        <B l="+/-" p={()=>setDisp(fmt(parseFloat(disp)*-1))} t="fn"/>
+        <B l="%" p={()=>{setDisp(fmt(parseFloat(disp)/100));setFresh(true);}} t="fn"/>
+        <B l="÷" p={()=>pressO('÷')} t="op"/>
+        {['7','8','9'].map(d=><B key={d} l={d} p={()=>pressD(d)}/>)}
+        <B l="×" p={()=>pressO('×')} t="op"/>
+        {['4','5','6'].map(d=><B key={d} l={d} p={()=>pressD(d)}/>)}
+        <B l="-" p={()=>pressO('-')} t="op"/>
+        {['1','2','3'].map(d=><B key={d} l={d} p={()=>pressD(d)}/>)}
+        <B l="+" p={()=>pressO('+')} t="op"/>
+        <B l="⌫" p={()=>{if(disp.length<=1){setDisp('0');return;}setDisp(disp.slice(0,-1));}} t="fn"/>
+        <B l="0" p={()=>pressD('0')}/>
+        <B l="," p={()=>pressD('.')}/>
+        <B l="=" p={pressEq} t="eq"/>
+      </div>
+    </div>
+  </div>;
+}
+
+// ── HOME ─────────────────────────────────────────────────────────
+function Home({state,dispatch,openCalc}){
+  const{config,lancamentos,saques}=state;
+  const fixas=getFixas(config);
+  const{saldo}=getBuckets(lancamentos,saques||[]);
+  const curMonth=todayISO().slice(0,7);
+  const thisMonth=lancamentos.filter(l=>getMonth(l.data)===curMonth);
+  const ganhoMes=thisMonth.reduce((s,l)=>s+l.ganho_bruto,0);
+  const lucroMes=thisMonth.reduce((s,l)=>s+(l.dist.lucro||0),0);
+  const totalPagoMae=(saques||[]).filter(s=>s.cat==='mae').reduce((a,s)=>a+s.valor,0);
+  const pctDivida=Math.min((totalPagoMae/config.divida_mae_total)*100,100);
+  const todayEntry=lancamentos.find(l=>l.data===todayISO());
+  const h=new Date().getHours();
+  const greeting=(config.nome?`Olá, ${config.nome.split(' ')[0]}! `:'')+( h<12?'Bom dia 🌅':h<18?'Boa tarde ☀️':'Boa noite 🌙');
+
+  return <div className="page fade">
+    <div style={{marginBottom:20}}>
+      <div style={{color:'var(--text2)',fontSize:13,marginBottom:2}}>{greeting}</div>
+      <h1 style={{fontSize:26,fontWeight:800}}>Dashboard</h1>
+    </div>
+
+    {/* Minimum card */}
+    <div className="card" style={{background:'linear-gradient(135deg,#1a1a2e,#16213e)',border:'1px solid #2d2d5a',marginBottom:10}}>
+      <div style={{color:'#7a9fea',fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'.07em',marginBottom:6}}>🔒 Mínimo para separar hoje</div>
+      <div style={{fontSize:32,fontWeight:800,color:'#fff',marginBottom:10}}>R$ {fmt(fixas.total)}</div>
+      {[{l:'Seguro',v:fixas.seg,c:'#a855f7'},{l:'Parcela',v:fixas.par,c:'#f97316'},{l:'IPVA',v:fixas.ipv,c:'#f59e0b'}].map(f=>(
+        <div key={f.l} style={{display:'flex',justifyContent:'space-between',marginBottom:3}}>
+          <span style={{color:'#666',fontSize:13}}>{f.l}</span>
+          <span style={{color:f.c,fontWeight:600,fontSize:13}}>R$ {fmt(f.v)}</span>
+        </div>
+      ))}
+      <div style={{marginTop:10,background:todayEntry?'rgba(34,197,94,.1)':'rgba(239,68,68,.08)',border:`1px solid ${todayEntry?'rgba(34,197,94,.3)':'rgba(239,68,68,.2)'}`,borderRadius:8,padding:'8px 12px',color:todayEntry?'#22c55e':'#f87171',fontSize:13}}>
+        {todayEntry?`✓ Hoje lançado — R$ ${fmt(todayEntry.ganho_bruto)} bruto`:'⚡ Dia de hoje ainda não lançado'}
+      </div>
+    </div>
+
+    {/* Month stats */}
+    <Sec>{monthLabel(curMonth)} — {thisMonth.length} dias</Sec>
+    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:10}}>
+      {[{l:'Bruto',v:`R$ ${fmt(ganhoMes,0)}`,c:'var(--text1)'},{l:'Lucro',v:`R$ ${fmt(lucroMes,0)}`,c:'var(--green)'},{l:'Média/dia',v:thisMonth.length?`R$ ${fmt(ganhoMes/thisMonth.length,0)}`:'—',c:'var(--blue)'}].map(s=>(
+        <div key={s.l} className="card bordered" style={{margin:0}}>
+          <div style={{color:'var(--text2)',fontSize:10,fontWeight:600,textTransform:'uppercase',letterSpacing:'.06em',marginBottom:4}}>{s.l}</div>
+          <div style={{color:s.c,fontSize:16,fontWeight:700}}>{s.v}</div>
+        </div>
+      ))}
+    </div>
+
+    {/* Debt */}
+    <Sec>Dívida com a mãe</Sec>
+    <div className="card bordered">
+      <div style={{display:'flex',justifyContent:'space-between',marginBottom:8}}>
+        <div><div style={{fontWeight:700}}>R$ {fmt(totalPagoMae)} pagos</div><div style={{color:'var(--text2)',fontSize:12}}>de R$ {fmt(config.divida_mae_total)}</div></div>
+        <div style={{textAlign:'right'}}><div style={{color:'var(--red)',fontWeight:700,fontSize:16}}>R$ {fmt(config.divida_mae_total-totalPagoMae)}</div><div style={{color:'var(--text2)',fontSize:11}}>restante</div></div>
+      </div>
+      <ProgressBar pct={pctDivida} color="#ef4444" h={10}/>
+      <div style={{color:'var(--text2)',fontSize:11,marginTop:5}}>{pctDivida.toFixed(1)}% quitado</div>
+    </div>
+
+    {/* Buckets */}
+    <Sec>Reservas acumuladas</Sec>
+    <div className="card bordered">
+      {[
+        {k:'seguro',l:'Seguro',c:'#a855f7',meta:config.seguro_mes},
+        {k:'parcela',l:'Parcela',c:'#f97316',meta:config.parcela_mes},
+        {k:'ipva',l:'IPVA',c:'#f59e0b',meta:config.ipva_ano/12},
+        {k:'manut',l:'Manutenção',c:'#22c55e',meta:config.meta_manut},
+        {k:'emerg',l:'Emergência',c:'#14b8a6',meta:config.meta_emerg},
+      ].map((b,i)=>(
+        <div key={b.k} style={{marginBottom:i<4?12:0}}>
+          <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
+            <div style={{display:'flex',alignItems:'center',gap:6}}>
+              <div style={{width:7,height:7,borderRadius:'50%',background:b.c}}/>
+              <span style={{fontSize:13,color:'var(--text2)'}}>{b.l}</span>
+            </div>
+            <span style={{fontSize:13,fontWeight:700}}>R$ {fmt(saldo[b.k])}</span>
+          </div>
+          <ProgressBar pct={(saldo[b.k]/b.meta)*100} color={b.c} h={4}/>
+        </div>
+      ))}
+    </div>
+
+    {/* Calc FAB */}
+    <button onClick={openCalc} style={{position:'fixed',bottom:78,right:18,background:'var(--blue)',border:'none',borderRadius:'50%',width:50,height:50,display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',boxShadow:'0 4px 20px rgba(59,130,246,.4)',zIndex:50}}>
+      <span style={{width:24,height:24,display:'flex'}}><IcoCalc/></span>
+    </button>
+  </div>;
+}
+
+// ── LANÇAR ───────────────────────────────────────────────────────
+function Lancar({state,dispatch}){
+  const{config,pcts}=state;
+  const fixas=getFixas(config);
+  const[ganho,setGanho]=useState('');
+  const[gas,setGas]=useState('');
+  const[obs,setObs]=useState('');
+  const[lp,setLp]=useState(pcts);
+  const[saved,setSaved]=useState(false);
+  const ganhoN=parseFloat(ganho)||0;
+  const gasN=parseFloat(gas)||0;
+  const saldoFixas=ganhoN-fixas.total;
+  const saldoLivre=saldoFixas-gasN;
+  const positivo=saldoLivre>0;
+  const lucroP=Math.max(0,100-lp.manut-lp.mae-lp.emerg);
+  const base=positivo?saldoLivre:0;
+
+  const handleSave=()=>{
+    if(!ganhoN)return;
+    dispatch({type:'ADD_L',p:{id:uid(),data:todayISO(),ganho_bruto:ganhoN,gasolina:gasN,dist:{seguro:fixas.seg,parcela:fixas.par,ipva:fixas.ipv,gasolina:gasN,manut:(base*lp.manut)/100,mae:(base*lp.mae)/100,emerg:(base*lp.emerg)/100,lucro:(base*lucroP)/100},obs}});
+    dispatch({type:'PCTS',p:lp});
+    setSaved(true);setTimeout(()=>{setGanho('');setGas('');setObs('');setSaved(false);},2500);
+  };
+
+  if(saved)return <div className="page fade" style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',minHeight:'60vh',gap:14}}>
+    <div style={{width:64,height:64,background:'rgba(34,197,94,.15)',borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',color:'var(--green)'}}><span style={{width:32,height:32,display:'flex'}}><IcoCheck/></span></div>
+    <div style={{fontSize:20,fontWeight:700}}>Dia salvo!</div>
+    <div style={{color:'var(--text2)'}}>Tudo registrado com sucesso ✓</div>
+  </div>;
+
+  return <div className="page fade">
+    <h1 style={{fontSize:24,fontWeight:800,marginBottom:20}}>Lançar Dia</h1>
+    <div style={{color:'var(--text2)',fontSize:12,marginBottom:16}}>{fmtDateFull(todayISO())}</div>
+
+    <Sec color="var(--blue)">1 — Ganho bruto hoje</Sec>
+    <div className="card bordered" style={{marginBottom:16}}>
+      <div style={{display:'flex',alignItems:'center',gap:8}}>
+        <span style={{color:'var(--text2)',fontSize:20,fontWeight:700}}>R$</span>
+        <input type="number" value={ganho} onChange={e=>setGanho(e.target.value)} placeholder="0,00" inputMode="numeric" style={{fontSize:30,fontWeight:800,border:'none',background:'transparent',color:'var(--text1)',padding:0,flex:1}}/>
+      </div>
+    </div>
+
+    {ganhoN>0&&<>
+      <Sec color="#a855f7">2 — Contas fixas (automático)</Sec>
+      <div className="card bordered">
+        {[{l:'Seguro',v:fixas.seg,c:'#a855f7'},{l:'Parcela',v:fixas.par,c:'#f97316'},{l:'IPVA',v:fixas.ipv,c:'#f59e0b'}].map((f,i)=>(
+          <div key={f.l} style={{display:'flex',justifyContent:'space-between',paddingBottom:i<2?10:0,marginBottom:i<2?10:0,borderBottom:i<2?'1px solid var(--border)':'none'}}>
+            <div style={{display:'flex',alignItems:'center',gap:7}}><div style={{width:7,height:7,borderRadius:'50%',background:f.c}}/><span style={{color:'var(--text2)',fontSize:14}}>{f.l}</span></div>
+            <span style={{color:f.c,fontWeight:700}}>R$ {fmt(f.v)}</span>
+          </div>
+        ))}
+      </div>
+      <div className="card" style={{background:saldoFixas>=0?'rgba(34,197,94,.06)':'rgba(239,68,68,.06)',border:`1px solid ${saldoFixas>=0?'rgba(34,197,94,.2)':'rgba(239,68,68,.2)'}`,marginBottom:16}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <span style={{color:'var(--text2)',fontSize:14}}>Saldo após fixas</span>
+          <span style={{fontWeight:700,fontSize:20,color:saldoFixas>=0?'var(--green)':'var(--red)'}}>R$ {fmt(saldoFixas)}</span>
+        </div>
+        {saldoFixas<0&&<div style={{color:'#f87171',fontSize:12,marginTop:4}}>⚠️ Dia fraco — faltaram R$ {fmt(Math.abs(saldoFixas))} só para as fixas.</div>}
+      </div>
+
+      <Sec color="var(--blue)">3 — Gasolina hoje</Sec>
+      <div className="card bordered" style={{marginBottom:8}}>
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <span style={{color:'var(--text2)',fontSize:18,fontWeight:700}}>R$</span>
+          <input type="number" value={gas} onChange={e=>setGas(e.target.value)} placeholder="0,00" inputMode="numeric" style={{fontSize:24,fontWeight:700,border:'none',background:'transparent',color:'var(--text1)',padding:0,flex:1}}/>
+        </div>
+      </div>
+      {gasN>0&&<div className="card" style={{background:'rgba(59,130,246,.06)',border:'1px solid rgba(59,130,246,.2)',marginBottom:16}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <span style={{color:'var(--text2)',fontSize:14}}>💰 Saldo livre para distribuir</span>
+          <span style={{fontWeight:700,fontSize:20,color:positivo?'var(--blue)':'var(--red)'}}>R$ {fmt(saldoLivre)}</span>
+        </div>
+      </div>}
+    </>}
+
+    {ganhoN>0&&gasN>0&&positivo&&<>
+      <Sec color="var(--green)">4 — Distribuir o saldo livre</Sec>
+      {[
+        {id:'manut',l:'Manutenção',sl:'pneus, óleo, freios',c:'#22c55e'},
+        {id:'mae',l:'Pagamento Mãe',sl:'abater a dívida',c:'#ef4444'},
+        {id:'emerg',l:'Reserva Emergência',sl:'fundo de segurança',c:'#14b8a6'},
+      ].map(v=>(
+        <div key={v.id} className="card bordered">
+          <div style={{display:'flex',justifyContent:'space-between',marginBottom:10}}>
+            <div style={{display:'flex',alignItems:'center',gap:8}}><div style={{width:8,height:8,borderRadius:'50%',background:v.c}}/><div><div style={{fontWeight:600,fontSize:14}}>{v.l}</div><div style={{color:'var(--text2)',fontSize:11}}>{v.sl}</div></div></div>
+            <div style={{textAlign:'right'}}><div style={{fontWeight:700,fontSize:16,color:v.c}}>R$ {fmt((base*lp[v.id])/100)}</div><div style={{color:'var(--text2)',fontSize:11}}>{lp[v.id]}%</div></div>
+          </div>
+          <div style={{position:'relative',height:20,display:'flex',alignItems:'center'}}>
+            <div style={{position:'absolute',left:0,top:'50%',transform:'translateY(-50%)',width:`${lp[v.id]}%`,height:4,background:v.c,borderRadius:2,pointerEvents:'none'}}/>
+            <input type="range" min={0} max={70} value={lp[v.id]} onChange={e=>setLp(p=>({...p,[v.id]:+e.target.value}))} style={{position:'relative',zIndex:1,width:'100%'}}/>
+          </div>
+        </div>
+      ))}
+      <div className="card" style={{background:'rgba(163,230,53,.06)',border:'1px solid rgba(163,230,53,.2)'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <div style={{display:'flex',alignItems:'center',gap:8}}><div style={{width:8,height:8,borderRadius:'50%',background:'#a3e635'}}/><div><div style={{fontWeight:600,fontSize:14}}>Lucro / Pró-labore</div><div style={{color:'var(--text2)',fontSize:11}}>calculado automaticamente</div></div></div>
+          <div style={{textAlign:'right'}}><div style={{fontWeight:700,fontSize:18,color:'#a3e635'}}>R$ {fmt((base*lucroP)/100)}</div><div style={{color:'var(--text2)',fontSize:11}}>{lucroP}%</div></div>
+        </div>
+      </div>
+    </>}
+
+    {ganhoN>0&&<>
+      <div style={{marginTop:12,marginBottom:4,color:'var(--text2)',fontSize:12}}>Observação (opcional)</div>
+      <input type="text" value={obs} onChange={e=>setObs(e.target.value)} placeholder="Ex: dia de chuva, saí às 22h..."/>
+    </>}
+    <div style={{marginTop:20}}><Btn label="Salvar dia" onClick={handleSave} full disabled={!ganhoN} color="var(--green)"/></div>
+  </div>;
+}
+
+// ── HISTÓRICO ────────────────────────────────────────────────────
+function Historico({state,dispatch}){
+  const{lancamentos,config}=state;
+  const[mf,setMf]=useState(todayISO().slice(0,7));
+  const[del,setDel]=useState(null);
+  const months=useMemo(()=>[...new Set(lancamentos.map(l=>getMonth(l.data)))].sort((a,b)=>b.localeCompare(a)),[lancamentos]);
+  const filtered=lancamentos.filter(l=>getMonth(l.data)===mf).sort((a,b)=>b.data.localeCompare(a.data));
+  const fixas=getFixas(config);
+  return <div className="page fade">
+    <h1 style={{fontSize:24,fontWeight:800,marginBottom:16}}>Histórico</h1>
+    <div style={{display:'flex',gap:8,overflowX:'auto',paddingBottom:4,marginBottom:14}}>
+      {months.map(m=><button key={m} onClick={()=>setMf(m)} style={{background:mf===m?'var(--blue)':'var(--s2)',color:mf===m?'#fff':'var(--text2)',border:'none',borderRadius:20,padding:'6px 14px',fontSize:13,fontWeight:600,whiteSpace:'nowrap',flexShrink:0}}>{monthLabel(m)}</button>)}
+      {!months.length&&<span style={{color:'var(--text2)',fontSize:13}}>Nenhum lançamento ainda</span>}
+    </div>
+    {filtered.length>0&&<div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginBottom:14}}>
+      {[
+        {l:'Dias',v:filtered.length,c:'var(--text1)'},
+        {l:'Bruto',v:`R$ ${fmt(filtered.reduce((s,l)=>s+l.ganho_bruto,0),0)}`,c:'var(--blue)'},
+        {l:'Lucro',v:`R$ ${fmt(filtered.reduce((s,l)=>s+(l.dist.lucro||0),0),0)}`,c:'var(--green)'},
+        {l:'Gas',v:`R$ ${fmt(filtered.reduce((s,l)=>s+(l.dist.gasolina||0),0),0)}`,c:'var(--yellow)'},
+      ].map(s=>(
+        <div key={s.l} className="card bordered" style={{margin:0,padding:'10px 12px'}}>
+          <div style={{color:'var(--text2)',fontSize:9,fontWeight:600,textTransform:'uppercase',letterSpacing:'.06em',marginBottom:3}}>{s.l}</div>
+          <div style={{color:s.c,fontSize:14,fontWeight:700}}>{s.v}</div>
+        </div>
+      ))}
+    </div>}
+    {!filtered.length&&<div style={{textAlign:'center',padding:'50px 0',color:'var(--text2)'}}><div style={{fontSize:40,marginBottom:12}}>📋</div>Nenhum lançamento</div>}
+    {filtered.map(l=>{
+      const ok=l.ganho_bruto>=(fixas.total+(l.gasolina||0));
+      return <div key={l.id} className="card bordered">
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10}}>
+          <div>
+            <div style={{fontWeight:700,fontSize:15}}>{fmtDateFull(l.data)}</div>
+            {l.obs&&<div style={{color:'var(--text2)',fontSize:12,marginTop:2}}>{l.obs}</div>}
+          </div>
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
+            <div style={{background:ok?'rgba(34,197,94,.1)':'rgba(239,68,68,.1)',color:ok?'var(--green)':'var(--red)',borderRadius:20,padding:'3px 10px',fontSize:11,fontWeight:600}}>{ok?'✓ Ok':'⚠ Fraco'}</div>
+            <button onClick={()=>setDel(l.id)} style={{background:'transparent',border:'none',color:'var(--text3)',padding:4,display:'flex',borderRadius:6}}><span style={{width:16,height:16,display:'flex'}}><IcoTrash/></span></button>
+          </div>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6}}>
+          {[{l:'Bruto',v:l.ganho_bruto,c:'var(--text1)'},{l:'Gasolina',v:l.dist.gasolina,c:'var(--blue)'},{l:'Reservas',v:(l.dist.seguro||0)+(l.dist.parcela||0)+(l.dist.ipva||0)+(l.dist.manut||0)+(l.dist.emerg||0)+(l.dist.mae||0),c:'var(--yellow)'},{l:'Lucro',v:l.dist.lucro,c:'var(--green)'}].map(i=>(
+            <div key={i.l} style={{background:'var(--s3)',borderRadius:8,padding:'8px 10px'}}>
+              <div style={{color:'var(--text2)',fontSize:9,marginBottom:3}}>{i.l}</div>
+              <div style={{color:i.c,fontWeight:700,fontSize:12}}>R$ {fmt(i.v)}</div>
+            </div>
+          ))}
+        </div>
+      </div>;
+    })}
+    {del&&<div className="modal-overlay" onClick={()=>setDel(null)}>
+      <div className="modal-sheet" style={{maxWidth:380}} onClick={e=>e.stopPropagation()}>
+        <div className="modal-handle"/>
+        <div style={{textAlign:'center',padding:'10px 0 20px'}}>
+          <div style={{width:56,height:56,background:'rgba(239,68,68,.1)',borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',color:'var(--red)',margin:'0 auto 16px'}}><span style={{width:28,height:28,display:'flex'}}><IcoTrash/></span></div>
+          <div style={{fontSize:18,fontWeight:700,marginBottom:8}}>Excluir lançamento?</div>
+          <div style={{color:'var(--text2)',fontSize:14,marginBottom:24}}>Não pode ser desfeito.</div>
+          <div style={{display:'flex',gap:10}}>
+            <Btn label="Cancelar" onClick={()=>setDel(null)} outline full/>
+            <Btn label="Excluir" onClick={()=>{dispatch({type:'DEL_L',id:del});setDel(null);}} color="var(--red)" full/>
+          </div>
+        </div>
+      </div>
+    </div>}
+  </div>;
+}
+
+// ── RESERVAS ─────────────────────────────────────────────────────
+function Reservas({state,dispatch}){
+  const{config,lancamentos,saques}=state;
+  const{saldo,stot}=getBuckets(lancamentos,saques||[]);
+  const[modal,setModal]=useState(null);
+  const[sv,setSv]=useState('');
+  const[so,setSo]=useState('');
+  const buckets=[
+    {k:'seguro',l:'Seguro',c:'#a855f7',meta:config.seguro_mes,sl:`Meta: R$ ${fmt(config.seguro_mes)}/mês`},
+    {k:'parcela',l:'Parcela',c:'#f97316',meta:config.parcela_mes,sl:`Meta: R$ ${fmt(config.parcela_mes)}/mês`},
+    {k:'ipva',l:'IPVA + Licenciamento',c:'#f59e0b',meta:config.ipva_ano,sl:`Meta anual: R$ ${fmt(config.ipva_ano)}`},
+    {k:'manut',l:'Manutenção',c:'#22c55e',meta:config.meta_manut,sl:`Meta: R$ ${fmt(config.meta_manut)}`},
+    {k:'emerg',l:'Reserva Emergência',c:'#14b8a6',meta:config.meta_emerg,sl:`Meta: R$ ${fmt(config.meta_emerg)}`},
+    {k:'mae',l:'Pagamento Mãe',c:'#ef4444',meta:config.divida_mae_total,sl:`Dívida total: R$ ${fmt(config.divida_mae_total)}`},
+  ];
+  const handleSaque=()=>{
+    if(!modal||!parseFloat(sv))return;
+    dispatch({type:'ADD_S',p:{id:uid(),cat:modal.k,valor:parseFloat(sv),obs:so,data:todayISO()}});
+    setSv('');setSo('');setModal(null);
+  };
+  return <div className="page fade">
+    <h1 style={{fontSize:24,fontWeight:800,marginBottom:6}}>Reservas</h1>
+    <div style={{color:'var(--text2)',fontSize:13,marginBottom:16}}>Toque em uma caixinha para registrar retirada ou pagamento.</div>
+    <div className="card" style={{background:'rgba(163,230,53,.06)',border:'1px solid rgba(163,230,53,.2)',marginBottom:16}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <div><div style={{fontWeight:700,fontSize:15}}>💰 Total de Lucro acumulado</div><div style={{color:'var(--text2)',fontSize:12}}>soma de todos os pró-labores</div></div>
+        <div style={{color:'#a3e635',fontWeight:800,fontSize:24}}>R$ {fmt(saldo.lucro)}</div>
+      </div>
+    </div>
+    {buckets.map(b=>{
+      const pct=Math.min((saldo[b.k]/b.meta)*100,100);
+      return <div key={b.k} className="card bordered" style={{cursor:'pointer'}} onClick={()=>setModal(b)}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10}}>
+          <div style={{display:'flex',alignItems:'center',gap:10}}>
+            <div style={{width:36,height:36,borderRadius:10,background:`${b.c}18`,display:'flex',alignItems:'center',justifyContent:'center'}}><div style={{width:13,height:13,borderRadius:'50%',background:b.c}}/></div>
+            <div><div style={{fontWeight:700,fontSize:15}}>{b.l}</div><div style={{color:'var(--text2)',fontSize:11}}>{b.sl}</div></div>
+          </div>
+          <div style={{textAlign:'right'}}>
+            <div style={{fontWeight:800,fontSize:20,color:b.c}}>R$ {fmt(saldo[b.k])}</div>
+            {stot[b.k]>0&&<div style={{color:'var(--text2)',fontSize:11}}>Retirado: R$ {fmt(stot[b.k])}</div>}
+          </div>
+        </div>
+        <ProgressBar pct={pct} color={b.c} h={6}/>
+        <div style={{display:'flex',justifyContent:'space-between',marginTop:5}}>
+          <span style={{color:'var(--text2)',fontSize:11}}>{pct.toFixed(0)}% da meta</span>
+          {pct>=100?<span style={{color:b.c,fontSize:11,fontWeight:600}}>✓ Meta atingida!</span>:<span style={{color:'var(--text2)',fontSize:11}}>Faltam R$ {fmt(b.meta-saldo[b.k])}</span>}
+        </div>
+      </div>;
+    })}
+    {(saques||[]).length>0&&<>
+      <Sec style={{marginTop:8}}>Histórico de retiradas</Sec>
+      {[...(saques||[])].reverse().slice(0,15).map(s=>(
+        <div key={s.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 0',borderBottom:'1px solid var(--border)'}}>
+          <div><div style={{fontSize:13,fontWeight:600}}>{CAT_LABELS[s.cat]||s.cat}</div><div style={{color:'var(--text2)',fontSize:11}}>{fmtDateFull(s.data)}{s.obs?` · ${s.obs}`:''}</div></div>
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
+            <span style={{color:'var(--red)',fontWeight:700}}>− R$ {fmt(s.valor)}</span>
+            <button onClick={()=>dispatch({type:'DEL_S',id:s.id})} style={{background:'transparent',border:'none',color:'var(--text3)',padding:2,display:'flex'}}><span style={{width:14,height:14,display:'flex'}}><IcoX/></span></button>
+          </div>
+        </div>
+      ))}
+    </>}
+    {modal&&<div className="modal-overlay" onClick={()=>setModal(null)}>
+      <div className="modal-sheet" style={{maxWidth:380}} onClick={e=>e.stopPropagation()}>
+        <div className="modal-handle"/>
+        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:18}}>
+          <div style={{width:40,height:40,borderRadius:10,background:`${modal.c}18`,display:'flex',alignItems:'center',justifyContent:'center'}}><div style={{width:13,height:13,borderRadius:'50%',background:modal.c}}/></div>
+          <div><div style={{fontWeight:700,fontSize:17}}>{modal.l}</div><div style={{color:'var(--text2)',fontSize:12}}>Saldo atual: R$ {fmt(saldo[modal.k])}</div></div>
+        </div>
+        <div style={{color:'var(--text2)',fontSize:13,marginBottom:6}}>Valor retirado / pago</div>
+        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
+          <span style={{color:'var(--text2)',fontSize:18,fontWeight:700}}>R$</span>
+          <input type="number" value={sv} onChange={e=>setSv(e.target.value)} placeholder="0,00" inputMode="numeric" autoFocus style={{fontSize:24,fontWeight:700}}/>
+        </div>
+        <div style={{color:'var(--text2)',fontSize:13,marginBottom:6}}>Observação (opcional)</div>
+        <input type="text" value={so} onChange={e=>setSo(e.target.value)} placeholder="Ex: paguei seguro de abril" style={{marginBottom:16}}/>
+        <div style={{display:'flex',gap:10}}>
+          <Btn label="Cancelar" onClick={()=>setModal(null)} outline full/>
+          <Btn label="Registrar" onClick={handleSaque} color={modal.c} full disabled={!parseFloat(sv)}/>
+        </div>
+      </div>
+    </div>}
+  </div>;
+}
+
+// ── CONFIG ───────────────────────────────────────────────────────
+function Config({state,dispatch}){
+  const[form,setForm]=useState({...state.config});
+  const[ok,setOk]=useState(false);
+  const F=(k,l,h)=><div style={{marginBottom:14}}>
+    <div style={{color:'var(--text2)',fontSize:12,marginBottom:5}}>{l}</div>
+    {h&&<div style={{color:'var(--text3)',fontSize:11,marginBottom:5}}>{h}</div>}
+    <div style={{display:'flex',alignItems:'center',gap:8}}>
+      <span style={{color:'var(--text2)',fontSize:14,fontWeight:600,flexShrink:0}}>R$</span>
+      <input type="number" value={form[k]} onChange={e=>setForm(f=>({...f,[k]:parseFloat(e.target.value)||0}))} inputMode="numeric"/>
+    </div>
+  </div>;
+  return <div className="page fade">
+    <h1 style={{fontSize:24,fontWeight:800,marginBottom:20}}>Configurações</h1>
+    <Sec>Dados pessoais</Sec>
+    <div className="card bordered" style={{marginBottom:16}}>
+      <div style={{color:'var(--text2)',fontSize:12,marginBottom:6}}>Seu nome</div>
+      <input type="text" value={form.nome} onChange={e=>setForm(f=>({...f,nome:e.target.value}))} placeholder="Como você quer ser chamado?"/>
+    </div>
+    <Sec>Contas fixas</Sec>
+    <div className="card bordered" style={{marginBottom:16}}>
+      {F('seguro_mes','Seguro do carro (mensalidade)','Padrão: R$ 1.928/mês')}
+      {F('parcela_mes','Parcela do carro (mensalidade)','Padrão: R$ 1.545/mês')}
+      {F('ipva_ano','IPVA + Licenciamento (anual)','Padrão: R$ 4.770/ano')}
+      <div style={{marginBottom:0}}>
+        <div style={{color:'var(--text2)',fontSize:12,marginBottom:6}}>Dias trabalhados por mês</div>
+        <input type="number" value={form.dias_mes} onChange={e=>setForm(f=>({...f,dias_mes:parseInt(e.target.value)||26}))} inputMode="numeric"/>
+      </div>
+    </div>
+    <Sec>Dívidas e metas</Sec>
+    <div className="card bordered" style={{marginBottom:16}}>
+      {F('divida_mae_total','Dívida total com a mãe')}
+      {F('meta_manut','Meta do fundo de manutenção')}
+      {F('meta_emerg','Meta do fundo de emergência')}
+    </div>
+    <Btn label={ok?'✓ Salvo!':'Salvar configurações'} onClick={()=>{dispatch({type:'CONFIG',p:form});setOk(true);setTimeout(()=>setOk(false),2000);}} full color={ok?'var(--green)':'var(--blue)'}/>
+    <div style={{marginTop:10}}>
+      <button onClick={()=>{if(confirm('Apagar TODOS os dados? Não pode ser desfeito.')){localStorage.removeItem(APP_KEY);location.reload();}}} style={{background:'transparent',border:'1px solid rgba(239,68,68,.3)',borderRadius:12,color:'#ef4444',fontSize:13,fontWeight:600,padding:'11px 0',width:'100%'}}>
+        ⚠️ Apagar todos os dados
+      </button>
+    </div>
+    <div style={{color:'var(--text3)',fontSize:11,textAlign:'center',marginTop:20}}>Dados salvos só neste dispositivo via localStorage.</div>
+  </div>;
+}
+
+// ── APP ──────────────────────────────────────────────────────────
+function App(){
+  const[state,dispatch]=useReducer(reducer,null,initState);
+  const[tab,setTab]=useState('home');
+  const[calc,setCalc]=useState(false);
+  const tabs=[{id:'home',l:'Início',I:IcoHome},{id:'lancar',l:'Lançar',I:IcoPlus},{id:'hist',l:'Histórico',I:IcoList},{id:'res',l:'Reservas',I:IcoPig},{id:'cfg',l:'Config',I:IcoGear}];
+  const pages={home:<Home state={state} dispatch={dispatch} openCalc={()=>setCalc(true)}/>,lancar:<Lancar state={state} dispatch={dispatch}/>,hist:<Historico state={state} dispatch={dispatch}/>,res:<Reservas state={state} dispatch={dispatch}/>,cfg:<Config state={state} dispatch={dispatch}/>};
+  return <>
+    {pages[tab]}
+    <nav id="nav">
+      {tabs.map(t=><button key={t.id} className={`nav-btn${tab===t.id?' active':''}`} onClick={()=>setTab(t.id)}>
+        <t.I/>{t.l}
+      </button>)}
+    </nav>
+    {calc&&<CalcModal onClose={()=>setCalc(false)}/>}
+  </>;
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
